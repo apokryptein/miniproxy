@@ -1,3 +1,4 @@
+pub mod socks5;
 use anyhow::Result;
 use clap::Parser;
 use tokio::io;
