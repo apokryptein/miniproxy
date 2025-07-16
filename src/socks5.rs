@@ -65,12 +65,6 @@ enum AddressType {
     IPv6 = 0x04,
 }
 
-/// TargetAddress represents a forward proxy address and port
-struct TargetAddress {
-    address: Address,
-    port: String,
-}
-
 /// Version represents available SOCKS proxy versions
 /// I included this for readability and clarity, but this
 /// implementation only supports SOCKS5
@@ -121,7 +115,7 @@ enum ReplyCode {
 const RSV: u8 = 0x00;
 
 /// handle_socks5 handles the full client/server SOCKS5 protocol flow
-async fn handle_socks5(mut stream: TcpStream) -> Result<()> {
+pub async fn handle_socks5(mut stream: TcpStream) -> Result<()> {
     // Negotiate authentication with client
     negotiate_auth(&mut stream).await?;
 
@@ -231,6 +225,7 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
             let reply_code = match e.kind() {
                 io::ErrorKind::ConnectionRefused => ReplyCode::ConnectionRefused,
                 io::ErrorKind::HostUnreachable => ReplyCode::HostUnreachable,
+                io::ErrorKind::NetworkUnreachable => ReplyCode::NetworkUnreachable,
                 _ => ReplyCode::ServerFailure,
             };
             send_reply(stream, reply_code, "0.0.0.0:0".parse()?).await?;
@@ -337,8 +332,9 @@ async fn send_reply(
 async fn proxy_connections(mut inbound: TcpStream, mut outbound: TcpStream) -> Result<()> {
     let (from_client, from_server) = copy_bidirectional(&mut inbound, &mut outbound).await?;
 
+    // DEBUG
     info!(
-        "[INFO] connection closed: {} bytes from client, {} bytes from server",
+        "connection closed: {} bytes from client, {} bytes from server",
         from_client, from_server
     );
 
