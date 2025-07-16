@@ -1,8 +1,9 @@
 use anyhow::{Result, anyhow, bail};
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional};
 use tokio::net::TcpStream;
+use tracing::info;
 
 // These structs help to document the SOCKS5 protocol structure
 // but aren't used in this implementation for simplicity
@@ -119,16 +120,21 @@ enum ReplyCode {
 // RSV: Fields marked RESERVED (RSV) must be set to X'00'.
 const RSV: u8 = 0x00;
 
-async fn handle_socks5(stream: &mut TcpStream) -> Result<()> {
+/// handle_socks5 handles the full client/server SOCKS5 protocol flow
+async fn handle_socks5(mut stream: TcpStream) -> Result<()> {
     // Negotiate authentication with client
-    negotiate_auth(stream).await?;
+    negotiate_auth(&mut stream).await?;
 
     // Handle connection requet from client
-    handle_connect_request(stream).await?;
+    let outbound = handle_connect_request(&mut stream).await?;
+
+    // Proxy
+    proxy_connections(stream, outbound).await?;
 
     Ok(())
 }
 
+/// negotiate_auth handles authentication negotiation between the SOCKS server and client
 async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
     // ClientHello format
     // +----+----------+----------+
@@ -172,7 +178,9 @@ async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
+/// handle_connect_request handles incoming connection requests from a SOCKS client
+/// parses the request, and returns an outbound stream to the target address
+async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
     // SOCKS5 request format
     // +----+-----+-------+------+----------+----------+
     // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
@@ -212,12 +220,12 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
     };
 
     match TcpStream::connect(&target).await {
-        Ok(mut outbound) => {
+        Ok(outbound) => {
             // Send OK reply
             send_reply(stream, ReplyCode::Succeeded, outbound.local_addr()?).await?;
 
-            // TODO: start proxying here
-            Ok(())
+            // Return outbound stream
+            Ok(outbound)
         }
         Err(e) => {
             let reply_code = match e.kind() {
@@ -231,6 +239,9 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
     }
 }
 
+/// parse_target_address contains logic to parse the network address
+/// from an incoming client connection request: IPv4, IPv6, or domain name
+/// and returns the resultant address as a String
 async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
     let mut atype = [0u8; 1];
     stream.read_exact(&mut atype).await?;
@@ -285,6 +296,8 @@ async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
     Ok(dest_addr)
 }
 
+/// send_reply handles logic for sending replies from the SOCKS server to
+/// the client
 async fn send_reply(
     stream: &mut TcpStream,
     reply_code: ReplyCode,
@@ -316,5 +329,18 @@ async fn send_reply(
 
     // Write reply
     stream.write_all(&reply).await?;
+    Ok(())
+}
+
+/// proxy_connections takes inbound and outbounds streams and bidrectionally streams data
+/// or "proxies" the data between them
+async fn proxy_connections(mut inbound: TcpStream, mut outbound: TcpStream) -> Result<()> {
+    let (from_client, from_server) = copy_bidirectional(&mut inbound, &mut outbound).await?;
+
+    info!(
+        "[INFO] connection closed: {} bytes from client, {} bytes from server",
+        from_client, from_server
+    );
+
     Ok(())
 }
