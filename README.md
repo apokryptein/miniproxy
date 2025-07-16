@@ -38,6 +38,7 @@ miniproxy -l 127.0.0.1:1080 -t example.com
 miniproxy --listen 127.0.0.1:1080 --socks5
 
 miniproxy -l 127.0.0.1:1080 -s
+```
 
 ## SOCKS5 Implementation
 
@@ -52,5 +53,5 @@ miniproxy -l 127.0.0.1:1080 -s
 - BIND command
 - UDP ASSOCIATE
 - Username/password authentication
-```
+
 
