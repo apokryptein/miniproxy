@@ -8,15 +8,15 @@ use tracing::{error, info};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    // Listen address
+    /// Listener address
     #[arg(short, long, default_value = "127.0.0.1:1080")]
     listen: String,
 
-    // Target address
+    /// Target address
     #[arg(short, long)]
     target: Option<String>,
 
-    // Use SOCKS5
+    /// Enable SOCKS5 proxy mode
     #[arg(short, long, action)]
     socks5: bool,
 }
