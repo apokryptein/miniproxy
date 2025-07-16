@@ -4,46 +4,46 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-/// ClientHello represents a SOCKS5 client hello
-struct ClientHello {
-    /// SOCKS version -> 0x05
-    version: u8,
-
-    /// Vector of SOCKS5 authentication methods supported by client
-    auth_methods: Vec<u8>,
-}
-
-/// ServerChoice represents the server's auth method selection
-struct ServerChoice {
-    /// SOCKS version -> 0x05
-    version: u8,
-
-    /// Authentication method selected by server
-    method: u8,
-}
-
-/// ConnectRequest represents a client client connection request
-struct ConnectRequest {
-    /// SOCKS version -> 0x05
-    version: u8,
-
-    /// SOCKS5 command (connect, bind)
-    command: u8, // 0x01=connect
-
-    /// Must be set to 0x00 as per specification
-    reserved: u8,
-
-    /// Address type (IPv4, domain, IPv6)
-    addr_type: u8, // 0x01=IPv4, 0x03=domain
-
-    /// Destination address
-    addr: Address,
-
-    /// Destination port
-    port: u16,
-}
-
-struct ServerReply {}
+// These structs help to document the SOCKS5 protocol structure
+// but aren't used in this implementation for simplicity
+// ClientHello represents a SOCKS5 client hello
+// struct ClientHello {
+//     /// SOCKS version -> 0x05
+//     version: u8,
+//
+//     /// Vector of SOCKS5 authentication methods supported by client
+//     auth_methods: Vec<u8>,
+// }
+//
+// /// ServerChoice represents the server's auth method selection
+// struct ServerChoice {
+//     /// SOCKS version -> 0x05
+//     version: u8,
+//
+//     /// Authentication method selected by server
+//     method: u8,
+// }
+//
+// ConnectRequest represents a client connection request
+// struct ConnectRequest {
+//     /// SOCKS version -> 0x05
+//     version: u8,
+//
+//     /// SOCKS5 command (connect, bind)
+//     command: u8, // 0x01=connect
+//
+//     /// Must be set to 0x00 as per specification
+//     reserved: u8,
+//
+//     /// Address type (IPv4, domain, IPv6)
+//     addr_type: u8, // 0x01=IPv4, 0x03=domain
+//
+//     /// Destination address
+//     addr: Address,
+//
+//     /// Destination port
+//     port: u16,
+// }
 
 /// Address represents a network address or domain to be used as the
 /// SOCKS5 target address
@@ -116,6 +116,9 @@ enum ReplyCode {
     // 0x09 - 0xFF: unassigned
 }
 
+// RSV: Fields marked RESERVED (RSV) must be set to X'00'.
+const RSV: u8 = 0x00;
+
 async fn handle_socks5(stream: &mut TcpStream) -> Result<()> {
     // Negotiate authentication with client
     negotiate_auth(stream).await?;
@@ -127,6 +130,13 @@ async fn handle_socks5(stream: &mut TcpStream) -> Result<()> {
 }
 
 async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
+    // ClientHello format
+    // +----+----------+----------+
+    // |VER | NMETHODS | METHODS  |
+    // +----+----------+----------+
+    // | 1  |    1     | 1 to 255 |
+    // +----+----------+----------+
+
     // Instantiate handshake buffer & read
     let mut buf = [0u8; 2];
     stream.read_exact(&mut buf).await?;
@@ -140,9 +150,18 @@ async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
         bail!("[ERR] not SOCKS5");
     }
 
+    // TODO: implement username/pass auth
+
     // Read auth methods: currently only implementing no-auth
     let mut methods = vec![0u8; n_methods as usize];
     stream.read_exact(&mut methods).await?;
+
+    // ServerChoice method selection reply format
+    // +----+--------+
+    // |VER | METHOD |
+    // +----+--------+
+    // | 1  |   1    |
+    // +----+--------+
 
     // Write response to client
     // TODO: clean up enum conversion later
@@ -154,6 +173,13 @@ async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
 }
 
 async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
+    // SOCKS5 request format
+    // +----+-----+-------+------+----------+----------+
+    // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+    // +----+-----+-------+------+----------+----------+
+    // | 1  |  1  | X'00' |  1   | Variable |    2     |
+    // +----+-----+-------+------+----------+----------+
+
     // Instantiate a request buffer & read
     let mut reqbuf = [0u8; 3];
     stream.read_exact(&mut reqbuf).await?;
@@ -172,25 +198,25 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
     let target = match command {
         0x01 => parse_target_address(stream).await?,
         0x02 => {
-            // TODO: add send_reply
+            send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
             return Err(anyhow!("[ERR] BIND not supported"));
         }
         0x03 => {
-            // TODO: add send_reply
+            send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
             return Err(anyhow!("[ERR] UDP ASSOCIATE not supported"));
         }
         _ => {
-            // TODO: add send reply
+            send_reply(stream, ReplyCode::ServerFailure, "0.0.0.0:0".parse()?).await?;
             return Err(anyhow!("[ERR] unknown command"));
         }
     };
 
     match TcpStream::connect(&target).await {
         Ok(mut outbound) => {
-            // TODO:
-            // build send_reply function
-            // then io::copy_birectional()
-            //
+            // Send OK reply
+            send_reply(stream, ReplyCode::Succeeded, outbound.local_addr()?).await?;
+
+            // TODO: start proxying here
             Ok(())
         }
         Err(e) => {
@@ -199,6 +225,7 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<()> {
                 io::ErrorKind::HostUnreachable => ReplyCode::HostUnreachable,
                 _ => ReplyCode::ServerFailure,
             };
+            send_reply(stream, reply_code, "0.0.0.0:0".parse()?).await?;
             Err(e.into())
         }
     }
@@ -256,4 +283,38 @@ async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
     };
 
     Ok(dest_addr)
+}
+
+async fn send_reply(
+    stream: &mut TcpStream,
+    reply_code: ReplyCode,
+    bound_addr: SocketAddr,
+) -> Result<()> {
+    // SOCKS5 reply format
+    // +----+-----+-------+------+----------+----------+
+    // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+    // +----+-----+-------+------+----------+----------+
+    // | 1  |  1  | X'00' |  1   | Variable |    2     |
+    // +----+-----+-------+------+----------+----------+
+
+    // Build initial reply vec
+    let mut reply = vec![Version::SOCKS5 as u8, reply_code as u8, RSV];
+
+    // Parse bound_addr as IPv4/6 and finish build accordingly
+    match bound_addr {
+        SocketAddr::V4(addr) => {
+            reply.push(AddressType::IPv4 as u8);
+            reply.extend_from_slice(&addr.ip().octets());
+            reply.extend_from_slice(&addr.port().to_be_bytes());
+        }
+        SocketAddr::V6(addr) => {
+            reply.push(AddressType::IPv6 as u8);
+            reply.extend_from_slice(&addr.ip().octets());
+            reply.extend_from_slice(&addr.port().to_be_bytes());
+        }
+    }
+
+    // Write reply
+    stream.write_all(&reply).await?;
+    Ok(())
 }
