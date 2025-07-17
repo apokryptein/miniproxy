@@ -45,15 +45,15 @@ use tracing::info;
 //     /// Destination port
 //     port: u16,
 // }
-
-/// Address represents a network address or domain to be used as the
-/// SOCKS5 target address
-#[derive(Debug, Clone)]
-enum Address {
-    IPv4([u8; 4]),
-    DomainName(String),
-    IPv6([u8; 16]),
-}
+//
+// Address represents a network address or domain to be used as the
+// SOCKS5 target address
+// #[derive(Debug, Clone)]
+// enum Address {
+//     IPv4([u8; 4]),
+//     DomainName(String),
+//     IPv6([u8; 16]),
+// }
 
 /// AddressType represents the SOCKS5 address types:
 /// IPv4, Domain Name, IPv6
@@ -63,6 +63,19 @@ enum AddressType {
     IPv4 = 0x01,
     DomainName = 0x03,
     IPv6 = 0x04,
+}
+
+/// AddressType implementation block
+impl AddressType {
+    /// from_byte converts a byte to its related network address type
+    fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x01 => Some(AddressType::IPv4),
+            0x03 => Some(AddressType::DomainName),
+            0x04 => Some(AddressType::IPv6),
+            _ => None,
+        }
+    }
 }
 
 /// Version represents available SOCKS proxy versions
@@ -251,12 +264,13 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
 /// from an incoming client connection request: IPv4, IPv6, or domain name
 /// and returns the resultant address as a String
 async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
+    // Read address type byte from stream
     let mut atype = [0u8; 1];
     stream.read_exact(&mut atype).await?;
 
     // Match type and extract address or domain name
-    let dest_addr = match atype[0] {
-        0x01 => {
+    let dest_addr = match AddressType::from_byte(atype[0]) {
+        Some(AddressType::IPv4) => {
             let mut addr = [0u8; 4];
             stream.read_exact(&mut addr).await?;
             let ip = Ipv4Addr::from(addr);
@@ -268,7 +282,7 @@ async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
 
             format!("{}:{}", ip, dest_port)
         }
-        0x03 => {
+        Some(AddressType::DomainName) => {
             // First octet in DomainName contains the number of
             // octets to follow
             let mut len = [0u8; 1];
@@ -286,7 +300,7 @@ async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
 
             format!("{}:{}", domain_str, dest_port)
         }
-        0x04 => {
+        Some(AddressType::IPv6) => {
             let mut addr = [0u8; 16];
             stream.read_exact(&mut addr).await?;
             let ip = Ipv6Addr::from(addr);
@@ -354,6 +368,9 @@ async fn proxy_connections(mut inbound: TcpStream, mut outbound: TcpStream) -> R
     Ok(())
 }
 
+/// select_auth_method take a reference to a u8 byte array that contains
+/// auth methods from the socks client. It then returns the desired
+/// auth method's byte value
 fn select_auth_method(client_methods: &[u8]) -> u8 {
     // Preferred auth method order
     // NOTE: update this as new methods are added -> user/pass, gssapi
