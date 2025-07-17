@@ -150,11 +150,12 @@ async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
         bail!("[ERR] not SOCKS5");
     }
 
-    // TODO: implement username/pass auth
-
     // Read auth methods: currently only implementing no-auth
     let mut methods = vec![0u8; n_methods as usize];
     stream.read_exact(&mut methods).await?;
+
+    // Retrieve desired method
+    let method = select_auth_method(&methods);
 
     // ServerChoice method selection reply format
     // +----+--------+
@@ -164,10 +165,7 @@ async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {
     // +----+--------+
 
     // Write response to client
-    // TODO: clean up enum conversion later
-    stream
-        .write_all(&[Version::SOCKS5 as u8, AuthMethod::NoAuth as u8])
-        .await?;
+    stream.write_all(&[Version::SOCKS5 as u8, method]).await?;
 
     Ok(())
 }
@@ -339,4 +337,20 @@ async fn proxy_connections(mut inbound: TcpStream, mut outbound: TcpStream) -> R
     );
 
     Ok(())
+}
+
+fn select_auth_method(client_methods: &[u8]) -> u8 {
+    // Preferred auth method order
+    const PREFERRED_METHODS: &[AuthMethod] =
+        &[AuthMethod::Gssapi, AuthMethod::UserPass, AuthMethod::NoAuth];
+
+    // Iterate through preferences in order. If there's a match
+    // return it
+    for &preferred in PREFERRED_METHODS {
+        if client_methods.contains(&(preferred as u8)) {
+            return preferred as u8;
+        }
+    }
+
+    AuthMethod::NoAcceptable as u8
 }
