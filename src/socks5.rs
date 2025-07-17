@@ -80,8 +80,8 @@ enum Version {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum AuthMethod {
     NoAuth = 0x00,
-    Gssapi = 0x01,
-    UserPass = 0x02,
+    // Gssapi = 0x01, not yet implemented
+    // UserPass = 0x02, note yet implemented
     // 0x03 - 0x7f: IANA reserved
     // 0x80 - 0xFE: private methods
     NoAcceptable = 0xFF,
@@ -96,6 +96,19 @@ enum Command {
     UdpAssociate = 0x03,
 }
 
+/// Command implementation block
+impl Command {
+    /// from_byte converts a byte to its related SOCKS5 protocol command
+    fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            0x01 => Some(Command::Connect),
+            0x02 => Some(Command::Bind),
+            0x03 => Some(Command::UdpAssociate),
+            _ => None,
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ReplyCode {
@@ -105,9 +118,9 @@ enum ReplyCode {
     NetworkUnreachable = 0x03,
     HostUnreachable = 0x04,
     ConnectionRefused = 0x05,
-    TtlExpired = 0x06,
+    //TtlExpired = 0x06, // TODO: implement optional TTL on connection
     CommandNotSupported = 0x07,
-    AddrTypeUnsupported = 0x08,
+    //AddrTypeUnsupported = 0x08,
     // 0x09 - 0xFF: unassigned
 }
 
@@ -195,13 +208,13 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
     }
 
     // Ensure we are getting a CONNECT request
-    let target = match command {
-        0x01 => parse_target_address(stream).await?,
-        0x02 => {
+    let target = match Command::from_byte(command) {
+        Some(Command::Connect) => parse_target_address(stream).await?,
+        Some(Command::Bind) => {
             send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
             return Err(anyhow!("[ERR] BIND not supported"));
         }
-        0x03 => {
+        Some(Command::UdpAssociate) => {
             send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
             return Err(anyhow!("[ERR] UDP ASSOCIATE not supported"));
         }
@@ -211,6 +224,7 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
         }
     };
 
+    // Connect to target
     match TcpStream::connect(&target).await {
         Ok(outbound) => {
             // Send OK reply
@@ -224,6 +238,7 @@ async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
                 io::ErrorKind::ConnectionRefused => ReplyCode::ConnectionRefused,
                 io::ErrorKind::HostUnreachable => ReplyCode::HostUnreachable,
                 io::ErrorKind::NetworkUnreachable => ReplyCode::NetworkUnreachable,
+                io::ErrorKind::PermissionDenied => ReplyCode::ConnectionNotAllowed,
                 _ => ReplyCode::ServerFailure,
             };
             send_reply(stream, reply_code, "0.0.0.0:0".parse()?).await?;
@@ -341,8 +356,8 @@ async fn proxy_connections(mut inbound: TcpStream, mut outbound: TcpStream) -> R
 
 fn select_auth_method(client_methods: &[u8]) -> u8 {
     // Preferred auth method order
-    const PREFERRED_METHODS: &[AuthMethod] =
-        &[AuthMethod::Gssapi, AuthMethod::UserPass, AuthMethod::NoAuth];
+    // NOTE: update this as new methods are added -> user/pass, gssapi
+    const PREFERRED_METHODS: &[AuthMethod] = &[AuthMethod::NoAuth];
 
     // Iterate through preferences in order. If there's a match
     // return it
