@@ -6,7 +6,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "A lightweight TCP and SOCKS5 proxy", long_about = None)]
 struct Args {
     /// Listener address
     #[arg(short, long, default_value = "127.0.0.1:1080")]
@@ -59,7 +59,7 @@ async fn proxy_socks(listen_addr: String) -> Result<()> {
             info!("new client: {}", peer_addr);
 
             // Send connection to connection handler
-            if let Err(e) = socks5::handle_socks5(inbound).await {
+            if let Err(e) = socks5::server::handle_socks5(inbound).await {
                 error!("connection error: {}", e);
             }
         });
