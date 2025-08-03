@@ -1,7 +1,9 @@
 use crate::socks5::protocol::{AuthMethod, Version};
 use anyhow::{Result, bail};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 /// negotiate_auth handles authentication negotiation between the SOCKS server and client
 pub async fn negotiate_auth(stream: &mut TcpStream) -> Result<()> {

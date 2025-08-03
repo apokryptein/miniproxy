@@ -1,17 +1,15 @@
-use crate::socks5::auth::negotiate_auth;
-use crate::socks5::commands::handle_connect_request;
+use crate::socks5::{auth, commands};
 use anyhow::Result;
-use tokio::io::copy_bidirectional;
-use tokio::net::TcpStream;
+use tokio::{io::copy_bidirectional, net::TcpStream};
 use tracing::info;
 
 /// handle_socks5 handles the full client/server SOCKS5 protocol flow
 pub async fn handle_socks5(mut stream: TcpStream) -> Result<()> {
     // Negotiate authentication with client
-    negotiate_auth(&mut stream).await?;
+    auth::negotiate_auth(&mut stream).await?;
 
     // Handle connection requet from client
-    let outbound = handle_connect_request(&mut stream).await?;
+    let outbound = commands::handle_connect_request(&mut stream).await?;
 
     // Proxy
     proxy_connections(stream, outbound).await?;

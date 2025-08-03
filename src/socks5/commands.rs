@@ -1,9 +1,13 @@
 use crate::socks5::protocol::{AddressType, Command, RSV, ReplyCode, Version};
 use anyhow::{Result, anyhow, bail};
-use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use std::{
+    io,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 // ================
 // CONNECT COMMAND

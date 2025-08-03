@@ -1,8 +1,10 @@
 pub mod socks5;
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use tokio::io;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    io,
+    net::{TcpListener, TcpStream},
+};
 use tracing::{error, info};
 
 #[derive(Parser, Debug)]
