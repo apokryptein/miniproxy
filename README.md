@@ -1,7 +1,6 @@
 # miniproxy
 
-A lighweight, fast TCP and SOCKS5 proxy written in Rust. Built for learning
-and practical use.
+A lighweight, fast TCP and SOCKS5 proxy written built for learning and practical use.
 
 ## Features
 
