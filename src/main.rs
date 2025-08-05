@@ -7,6 +7,8 @@ use tokio::{
 };
 use tracing::{error, info};
 
+// TODO: add lib.rs
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A lightweight TCP and SOCKS5 proxy", long_about = None)]
 struct Args {
