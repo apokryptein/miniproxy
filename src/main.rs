@@ -23,6 +23,14 @@ struct Args {
     /// Enable SOCKS5 proxy mode
     #[arg(short, long, action)]
     socks5: bool,
+
+    /// Username for SOCKS5 proxy
+    #[arg(short, long)]
+    username: Option<String>,
+
+    /// Password for SOCKS5 proxy
+    #[arg(short, long)]
+    password: Option<String>,
 }
 
 #[tokio::main]
