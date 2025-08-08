@@ -1,11 +1,13 @@
 pub mod socks5;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use tokio::{
     io,
     net::{TcpListener, TcpStream},
 };
 use tracing::{error, info};
+
+use crate::socks5::{auth::UserPass, server::Socks5Server};
 
 // TODO: add lib.rs
 
@@ -41,40 +43,31 @@ async fn main() -> Result<()> {
     // Parse args
     let args = Args::parse();
 
+    // Check for auth and grab it if present
+    let auth = match (args.username, args.password) {
+        (Some(u), Some(p)) => Some(UserPass {
+            username: u,
+            password: p,
+        }),
+        (None, None) => None,
+        _ => bail!("[ERR] must provide both username and password (or neither)"),
+    };
+
+    // Check for socks5
     match args.socks5 {
-        true => proxy_socks(args.listen).await,
+        true => {
+            // Instantiate new Socks5Server
+            let server = Socks5Server::new(args.listen).with_auth(auth);
+
+            // Run it
+            server.run().await
+        }
         false => {
             let target = args
                 .target
                 .ok_or_else(|| anyhow!("[ERR] target is required for TCP proxy mode"))?;
             proxy_tcp(args.listen, target).await
         }
-    }
-}
-
-/// proxy_socks handles pass off from main to SOCKS5 proxy logic
-async fn proxy_socks(listen_addr: String) -> Result<()> {
-    // DEBUG
-    info!("SOCKS5 proxy listening on {}", listen_addr);
-
-    // Instantiate tokio listener
-    let listener = TcpListener::bind(listen_addr).await?;
-
-    // Listen for connections to proxy
-    loop {
-        // Accept incoming connection
-        let (inbound, peer_addr) = listener.accept().await?;
-
-        // Spawn async task
-        tokio::spawn(async move {
-            // DEBUG
-            info!("new client: {}", peer_addr);
-
-            // Send connection to connection handler
-            if let Err(e) = socks5::server::handle_socks5(inbound).await {
-                error!("connection error: {}", e);
-            }
-        });
     }
 }
 

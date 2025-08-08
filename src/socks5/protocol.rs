@@ -1,54 +1,3 @@
-// These structs help to document the SOCKS5 protocol structure
-// but aren't used in this implementation for simplicity
-
-// ClientHello represents a SOCKS5 client hello
-// struct ClientHello {
-//     /// SOCKS version -> 0x05
-//     version: u8,
-//
-//     /// Vector of SOCKS5 authentication methods supported by client
-//     auth_methods: Vec<u8>,
-// }
-//
-// /// ServerChoice represents the server's auth method selection
-// struct ServerChoice {
-//     /// SOCKS version -> 0x05
-//     version: u8,
-//
-//     /// Authentication method selected by server
-//     method: u8,
-// }
-
-// ConnectRequest represents a client connection request
-// struct ConnectRequest {
-//     /// SOCKS version -> 0x05
-//     version: u8,
-//
-//     /// SOCKS5 command (connect, bind)
-//     command: u8, // 0x01=connect
-//
-//     /// Must be set to 0x00 as per specification
-//     reserved: u8,
-//
-//     /// Address type (IPv4, domain, IPv6)
-//     addr_type: u8, // 0x01=IPv4, 0x03=domain
-//
-//     /// Destination address
-//     addr: Address,
-//
-//     /// Destination port
-//     port: u16,
-// }
-
-// Address represents a network address or domain to be used as the
-// SOCKS5 target address
-// #[derive(Debug, Clone)]
-// enum Address {
-//     IPv4([u8; 4]),
-//     DomainName(String),
-//     IPv6([u8; 16]),
-// }
-
 // RSV: Fields marked RESERVED (RSV) must be set to X'00'.
 pub const RSV: u8 = 0x00;
 
@@ -84,6 +33,15 @@ pub enum Version {
     SOCKS5 = 0x05,
 }
 
+/// AuthStatus represents the possible authentication reponse codes
+/// for the SOCKS5 protocol
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AuthStatus {
+    Success = 0x00,
+    Failure = 0x01,
+}
+
 /// AuthMethod represents available SOCKS5
 /// authentication methods
 #[repr(u8)]
@@ -91,10 +49,23 @@ pub enum Version {
 pub enum AuthMethod {
     NoAuth = 0x00,
     // Gssapi = 0x01, not yet implemented
-    // UserPass = 0x02, note yet implemented
+    UserPass = 0x02,
     // 0x03 - 0x7f: IANA reserved
     // 0x80 - 0xFE: private methods
     NoAcceptable = 0xFF,
+}
+
+/// AuthMethod implementation block
+impl AuthMethod {
+    /// from_byte converts a byte value to its associated AuthMethod
+    pub fn from_byte(byte: u8) -> Self {
+        match byte {
+            0x00 => AuthMethod::NoAuth,
+            0x02 => AuthMethod::UserPass,
+            0xFF => AuthMethod::NoAcceptable,
+            _ => AuthMethod::NoAcceptable,
+        }
+    }
 }
 
 /// Command represents SOCKS5 protocol commands
