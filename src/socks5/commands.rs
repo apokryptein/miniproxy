@@ -6,16 +6,27 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    net::{TcpStream, UdpSocket},
 };
 
-// ================
-// CONNECT COMMAND
-// ================
+/// TransportProcol is an enum holding either a tokio
+/// TcpStream or UdpSocket
+pub enum TransportProcol {
+    Tcp(TcpStream),
+    UdpAssociate(UdpAssociate),
+}
 
-/// handle_connect_request handles incoming connection requests from a SOCKS client
-/// parses the request, and returns an outbound stream to the target address
-pub async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream> {
+/// UdpAssociate holds data relevant to the UDP Associate command
+/// such as SOCKS server socket and address as well as the target address
+pub struct UdpAssociate {
+    pub server_socket: UdpSocket,
+    pub server_addr: SocketAddr,
+    pub target_addr: SocketAddr,
+}
+
+/// handle_socks_request checks the incoming request for SOCKS5 version number
+/// and command and routes the stream to the appropriate command handler
+pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportProcol> {
     // SOCKS5 request format
     // +----+-----+-------+------+----------+----------+
     // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
@@ -37,22 +48,36 @@ pub async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream>
         bail!("[ERR] not SOCKS5");
     }
 
-    // Ensure we are getting a CONNECT request
-    let target = match Command::from_byte(command) {
-        Some(Command::Connect) => parse_target_address(stream).await?,
+    // Check command and route
+    match Command::from_byte(command) {
+        Some(Command::Connect) => {
+            let outbound = handle_connect_cmd(stream).await?;
+            Ok(TransportProcol::Tcp(outbound))
+        }
         Some(Command::Bind) => {
             send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
-            return Err(anyhow!("[ERR] BIND not supported"));
+            Err(anyhow!("[ERR] BIND not supported"))
         }
         Some(Command::UdpAssociate) => {
-            send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
-            return Err(anyhow!("[ERR] UDP ASSOCIATE not supported"));
+            let udp_association = handle_udpassociate_cmd(stream).await?;
+            Ok(TransportProcol::UdpAssociate(udp_association))
         }
         _ => {
             send_reply(stream, ReplyCode::ServerFailure, "0.0.0.0:0".parse()?).await?;
-            return Err(anyhow!("[ERR] unknown command"));
+            Err(anyhow!("[ERR] unknown command"))
         }
-    };
+    }
+}
+
+// ================
+// CONNECT COMMAND
+// ================
+
+/// handle_connect_cmd handles incoming connection requests from a SOCKS client
+/// parses the request, and returns an outbound stream to the target address
+async fn handle_connect_cmd(stream: &mut TcpStream) -> Result<TcpStream> {
+    // Retrieve target from request
+    let (target, _) = parse_target_address(stream).await?;
 
     // Connect to target
     match TcpStream::connect(&target).await {
@@ -81,7 +106,35 @@ pub async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream>
 // UDP ASSOCIATE
 // ===============
 
-// TODO: implement UDP ASSOCIATE command
+/// handle_udpassociate_cmd parses the incoming UDP ASSOCIATE command, retrieves, and
+/// returns the target address
+async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate> {
+    // Retrieve target address from request
+    let target_addr = match parse_target_address(stream).await {
+        Ok((addr, AddressType::IPv4)) => addr.parse()?,
+        Ok((addr, AddressType::IPv6)) => addr.parse()?,
+        Ok((addr, AddressType::DomainName)) => tokio::net::lookup_host(&addr)
+            .await?
+            .next()
+            .ok_or_else(|| anyhow!("[ERR] failed to resolve host: {}", addr))?,
+        Err(e) => return Err(anyhow!("[ERR] failed to parse target address: {e}")),
+    };
+
+    // Bind UDP socket on SOCKS server
+    let udp_socket = UdpSocket::bind("0.0.0.0:0").await?;
+    let udp_socket_addr = udp_socket.local_addr()?;
+
+    // Instantiate UdpAssociate for return
+    let udp_association = UdpAssociate {
+        server_socket: udp_socket,
+        server_addr: udp_socket_addr,
+        target_addr,
+    };
+
+    // TODO: create a UDP reply to client here
+
+    Ok(udp_association)
+}
 
 // =========
 // HELPERS
@@ -90,10 +143,13 @@ pub async fn handle_connect_request(stream: &mut TcpStream) -> Result<TcpStream>
 /// parse_target_address contains logic to parse the network address
 /// from an incoming client connection request: IPv4, IPv6, or domain name
 /// and returns the resultant address as a String
-async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
+async fn parse_target_address(stream: &mut TcpStream) -> Result<(String, AddressType)> {
     // Read address type byte from stream
     let mut atype = [0u8; 1];
     stream.read_exact(&mut atype).await?;
+
+    let addr_type =
+        AddressType::from_byte(atype[0]).ok_or_else(|| anyhow!("[ERR] unknown address type"))?;
 
     // Match type and extract address or domain name
     let dest_addr = match AddressType::from_byte(atype[0]) {
@@ -139,10 +195,10 @@ async fn parse_target_address(stream: &mut TcpStream) -> Result<String> {
 
             format!("{ip}:{dest_port}")
         }
-        _ => return Err(anyhow!("[ERR] unknown address type")),
+        _ => return Err(anyhow!("[ERR] unsupported or unknown address type")),
     };
 
-    Ok(dest_addr)
+    Ok((dest_addr, addr_type))
 }
 
 /// send_reply handles logic for sending replies from the SOCKS server to
