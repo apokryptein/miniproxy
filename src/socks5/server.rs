@@ -1,13 +1,10 @@
 use crate::socks5::{
     auth::{self, UserPass},
-    commands::{self, TransportProcol, UdpAssociate},
+    commands::{self, TransportProcol},
 };
 use anyhow::{Result, anyhow};
 use std::sync::Arc;
-use tokio::{
-    io::copy_bidirectional,
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info};
 
 /// Socks5Server represents a SOCKS5 server and houses related
@@ -75,44 +72,23 @@ async fn handle_connection(
     // Handle connection request from client
     match commands::handle_socks_request(&mut stream).await {
         Ok(TransportProcol::Tcp(tcp_outbound)) => {
-            // Relay UDP traffic
-            relay_tcp(stream, tcp_outbound).await?;
+            // Instantiate Connect
+            let connect = commands::Connect {
+                inbound: stream,
+                outbound: tcp_outbound,
+            };
+
+            // Run it
+            connect.run().await?;
         }
         Ok(TransportProcol::UdpAssociate(udp_association)) => {
             // Relay UDP traffic
-            relay_udp(&mut stream, &udp_association).await?;
+            udp_association.run(&mut stream).await?;
         }
         Err(e) => {
             return Err(anyhow!("[ERR] failed to handle socks request: {e}"));
         }
     }
 
-    Ok(())
-}
-
-/// relay_tcp bidrectionally streams data the data between them beween the client and target
-async fn relay_tcp(mut inbound: TcpStream, mut outbound: TcpStream) -> Result<()> {
-    let (from_client, from_server) = copy_bidirectional(&mut inbound, &mut outbound).await?;
-
-    // DEBUG
-    info!(
-        "connection closed: {} bytes from client, {} bytes from server",
-        from_client, from_server
-    );
-
-    Ok(())
-}
-
-/// relay_udp bidrectionally streams data data between a client and target
-async fn relay_udp(tcp_control: &mut TcpStream, udp_associate: &UdpAssociate) -> Result<()> {
-    // TODO: continue udp association impelementation here
-
-    // +----+------+------+----------+----------+----------+
-    // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
-    // +----+------+------+----------+----------+----------+
-    // | 2  |  1   |  1   | Variable |    2     | Variable |
-    // +----+------+------+----------+----------+----------+
-
-    let (_, _) = (tcp_control, udp_associate);
     Ok(())
 }

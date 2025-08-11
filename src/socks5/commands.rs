@@ -5,9 +5,10 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
     net::{TcpStream, UdpSocket},
 };
+use tracing::info;
 
 /// TransportProcol is an enum holding either a tokio
 /// TcpStream or UdpSocket
@@ -16,12 +17,56 @@ pub enum TransportProcol {
     UdpAssociate(UdpAssociate),
 }
 
+/// Connect hold data relevant to Connect command SOCKS5 proxying
+pub struct Connect {
+    pub inbound: TcpStream,
+    pub outbound: TcpStream,
+}
+
+/// Connect implementation block
+impl Connect {
+    /// Connect run method
+    pub async fn run(mut self) -> Result<()> {
+        let (from_client, from_server) =
+            // Relay between streams
+            copy_bidirectional(&mut self.inbound, &mut self.outbound).await?;
+
+        // DEBUG
+        info!(
+            "connection closed: {} bytes from client, {} bytes from server",
+            from_client, from_server
+        );
+
+        Ok(())
+    }
+}
+
 /// UdpAssociate holds data relevant to the UDP Associate command
 /// such as SOCKS server socket and address as well as the target address
 pub struct UdpAssociate {
     pub server_socket: UdpSocket,
     pub server_addr: SocketAddr,
+    pub peer_addr: SocketAddr,
     pub target_addr: SocketAddr,
+}
+
+/// UdpAssociate implementation block
+impl UdpAssociate {
+    /// UDP Associate run method
+    pub async fn run(self, stream: &mut TcpStream) -> Result<()> {
+        // TODO: continue udp association impelementation here
+
+        // SOCKS5 UDP Request Header
+        // +----+------+------+----------+----------+----------+
+        // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+        // +----+------+------+----------+----------+----------+
+        // | 2  |  1   |  1   | Variable |    2     | Variable |
+        // +----+------+------+----------+----------+----------+
+
+        let _ = stream;
+
+        Ok(())
+    }
 }
 
 /// handle_socks_request checks the incoming request for SOCKS5 version number
@@ -121,19 +166,26 @@ async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate>
     };
 
     // Bind UDP socket on SOCKS server
-    let udp_socket = UdpSocket::bind("0.0.0.0:0").await?;
-    let udp_socket_addr = udp_socket.local_addr()?;
+    match UdpSocket::bind("0.0.0.0:0").await {
+        Ok(sock) => {
+            // Get the socket address
+            let udp_socket_addr = sock.local_addr()?;
 
-    // Instantiate UdpAssociate for return
-    let udp_association = UdpAssociate {
-        server_socket: udp_socket,
-        server_addr: udp_socket_addr,
-        target_addr,
-    };
-
-    // TODO: create a UDP reply to client here
-
-    Ok(udp_association)
+            // Instantiate UdpAssociate for return
+            let udp_association = UdpAssociate {
+                server_socket: sock,
+                server_addr: udp_socket_addr,
+                peer_addr: stream.peer_addr()?,
+                target_addr,
+            };
+            Ok(udp_association)
+        }
+        Err(e) => {
+            // If there's an issue, it's with binding the UDP socket server side
+            send_reply(stream, ReplyCode::ServerFailure, "0.0.0.0:0".parse()?).await?;
+            Err(e.into())
+        }
+    }
 }
 
 // =========

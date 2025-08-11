@@ -1,5 +1,16 @@
-// RSV: Fields marked RESERVED (RSV) must be set to X'00'.
+/// RSV: Fields marked RESERVED (RSV) must be set to X'00'.
 pub const RSV: u8 = 0x00;
+
+/// UDP_RSV: 2-byte RESERVED (RSV) field in UDP datagram header
+pub const UDP_RSV: u8 = 0x0000;
+
+/// UDP_FRAG: 1-byte fragment number value in the SOCKS5 UDP header
+/// Set to 0x00 to let UDP handle any fragmentation
+pub const UDP_FRAG: u8 = 0x00;
+
+/// MAX_DRGRAM: maximum UDP datagram size in bytes
+/// IPv4 maximum packet size (65,535) - IPv4 header size (20) - UDP header size (8) -> 65,507 bytes
+pub const MAX_DRAM: usize = 65_507;
 
 /// AddressType represents the SOCKS5 address types:
 /// IPv4, Domain Name, IPv6
