@@ -10,7 +10,7 @@ pub const UDP_FRAG: u8 = 0x00;
 
 /// MAX_DRGRAM: maximum UDP datagram size in bytes
 /// IPv4 maximum packet size (65,535) - IPv4 header size (20) - UDP header size (8) -> 65,507 bytes
-pub const MAX_DRAM: usize = 65_507;
+pub const MAX_DGRAM: usize = 65_507;
 
 /// AddressType represents the SOCKS5 address types:
 /// IPv4, Domain Name, IPv6

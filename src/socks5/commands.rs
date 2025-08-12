@@ -1,5 +1,7 @@
-use crate::socks5::protocol::{AddressType, Command, RSV, ReplyCode, Version};
+use crate::socks5::protocol::{AddressType, Command, MAX_DGRAM, RSV, ReplyCode, Version};
 use anyhow::{Result, anyhow, bail};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use std::{
     io,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -7,8 +9,9 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
     net::{TcpStream, UdpSocket},
+    select,
 };
-use tracing::info;
+use tracing::{error, info};
 
 /// TransportProcol is an enum holding either a tokio
 /// TcpStream or UdpSocket
@@ -54,8 +57,6 @@ pub struct UdpAssociate {
 impl UdpAssociate {
     /// UDP Associate run method
     pub async fn run(self, stream: &mut TcpStream) -> Result<()> {
-        // TODO: continue udp association impelementation here
-
         // SOCKS5 UDP Request Header
         // +----+------+------+----------+----------+----------+
         // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
@@ -63,7 +64,72 @@ impl UdpAssociate {
         // | 2  |  1   |  1   | Variable |    2     | Variable |
         // +----+------+------+----------+----------+----------+
 
-        let _ = stream;
+        // Instantiate UDP relay buffer
+        let mut buffer = [0u8; MAX_DGRAM];
+
+        // Instantiate connection pool
+        let mut outbound_sockets: HashMap<SocketAddr, UdpSocket> = HashMap::new();
+
+        // Track last activity time for each client
+        let mut last_activity: HashMap<SocketAddr, Instant> = HashMap::new();
+
+        // Set a 60s timeout
+        let timeout = Duration::from_secs(60);
+
+        // DEBUG
+        info!(
+            "UDP relay started: server is listening on: {}",
+            self.server_addr
+        );
+
+        loop {
+            select! {
+                // We need to monitor the TCP connection to handle teardown if needed
+                tcp_check = stream.readable() => {
+                    if tcp_check.is_err() {
+                        info!("TCP connection error: terminating UDP association");
+                        break;
+                    }
+
+                    let mut test_buf = [0u8; 1];
+                    match stream.try_read(&mut test_buf) {
+                        Ok(0) => {
+                            info!("Client disconnected: terminating UDP association");
+                            break;
+                        },
+                        Ok(_) => {
+                             info!("Unexpected data on TCP connection during UDP association");
+                        },
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // No data on TCP, totally fine
+                        },
+                        Err(e) => {
+                            error!("[ERR] TCP read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                // Client -> server
+                incoming_udp = self.server_socket.recv_from(&mut buffer) => {
+                    match incoming_udp {
+                        Ok((len, client_addr)) =>  {
+                            // TODO: write helper to parse incoming UDP and forward data
+                            let _ = len;
+                            let _ = client_addr;
+                        },
+                        Err(e) => {
+                            error!("[ERR] UDP receive error: {e}");
+                            break;
+                        }
+                    }
+                }
+
+                // TODO: Handle incoming from outbound
+            }
+
+            // TODO: Clean up expired connections
+        }
 
         Ok(())
     }
