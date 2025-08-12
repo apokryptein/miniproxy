@@ -42,15 +42,17 @@ miniproxy -l 127.0.0.1:1080 -s
 ## SOCKS5 Implementation
 
 ### Supported Features
+
 - CONNECT command
 - IPv4 addresses
 - IPv6 addresses
 - Domain names
-- No authentication
+- Authentication
+  - No auth
+  - Username/password
 
 ### Not Implemented (Future Improvements)
+
 - BIND command
 - UDP ASSOCIATE
-- Username/password authentication
-
-
+- GSSAPI Authentication
