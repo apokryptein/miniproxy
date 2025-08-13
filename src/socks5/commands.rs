@@ -151,7 +151,45 @@ impl UdpAssociate {
         // Parse target address from packet
         let (target_addr, addr_len) = parse_address_from_packet(&packet, offset, atyp).await?;
 
-        // TODO: finish from here
+        // Update offset to push past dest addr and port
+        offset += addr_len;
+
+        // Ensure there is data in the packet
+        if offset >= packet.len() {
+            return Err(anyhow!("no data in UDP packet"));
+        }
+
+        // Pull out data for forwarding
+        let data = &packet[offset..];
+
+        // Get existing socket or create new one if one doesn't exist for target address
+        let outbound_socket = match outbound_sockets.get(&target_addr) {
+            Some(socket) => socket,
+            None => {
+                // Bind new socket
+                let new_socket = UdpSocket::bind("0.0.0.0:0").await?;
+
+                // DEBUG
+                info!("created new outbound socket {target_addr}");
+
+                // Add to outboudn_sockets HashMap
+                outbound_sockets.insert(target_addr, new_socket);
+
+                outbound_sockets.get(&target_addr).unwrap()
+            }
+        };
+
+        // Forward to target
+        outbound_socket.send_to(data, target_addr).await?;
+
+        // Update last activity for socket
+        last_activity.insert(target_addr, Instant::now());
+
+        // DEBUG
+        info!(
+            "forwarded {} bytes from {client_addr} to {target_addr}",
+            data.len()
+        );
 
         Ok(())
     }
