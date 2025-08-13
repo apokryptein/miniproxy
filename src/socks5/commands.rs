@@ -118,9 +118,13 @@ impl UdpAssociate {
                 }
 
                 // TODO: Handle incoming from outbound
-            }
 
-            // TODO: Clean up expired connections
+
+                // Clean up expired connections
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    clean_expired_connections(&mut outbound_sockets, &mut last_activity, timeout);
+                }
+            }
         }
 
         Ok(())
@@ -352,4 +356,33 @@ async fn send_reply(
     // Write reply
     stream.write_all(&reply).await?;
     Ok(())
+}
+
+/// clean_expired_connections removes expired outbound connections from last_activity
+/// and outbound_sockets hash maps
+fn clean_expired_connections(
+    outbound_sockets: &mut HashMap<SocketAddr, UdpSocket>,
+    last_activity: &mut HashMap<SocketAddr, Instant>,
+    timeout: Duration,
+) {
+    // Get current instant
+    let now = Instant::now();
+
+    // Remove expired entries from last_activity
+    last_activity.retain(|&addr, &mut last_time| {
+        let is_expired = now.duration_since(last_time) > timeout;
+        if is_expired {
+            // Also remove from outbound_sockets
+            outbound_sockets.remove(&addr);
+
+            // DEBUG
+            info!("removed expired connection to {addr}");
+
+            // Remove from last_activity
+            false
+        } else {
+            // Leave in last_activity
+            true
+        }
+    });
 }

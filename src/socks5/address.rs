@@ -70,11 +70,36 @@ pub async fn parse_address_from_stream(stream: &mut TcpStream) -> Result<(String
 pub async fn parse_address_from_packet(
     packet: &[u8],
     start_offset: usize,
-    atype: u8,
+    atyp: u8,
 ) -> Result<(SocketAddr, usize)> {
-    // TODO: finish this
+    // Set offset to maintain start
+    let mut offset = start_offset;
 
-    let offset = start_offset;
+    // Get address type and parse
+    let addr_str = match atyp {
+        0x01 => parse_ipv4_address(packet, &mut offset)?,
+        0x03 => parse_domain_address(packet, &mut offset)?,
+        0x04 => parse_ipv6_address(packet, &mut offset)?,
+        _ => return Err(anyhow!("unknown address type: {atyp}")),
+    };
+
+    // Parse address string into SocketAddr
+    let socket_addr = match atyp {
+        0x01 | 0x04 => addr_str
+            .parse()
+            .map_err(|e| anyhow!("failed to parse IP address: {e}"))?,
+        0x03 => tokio::net::lookup_host(&addr_str)
+            .await
+            .map_err(|e| anyhow!("failed to resolve host '{addr_str}': {e}"))?
+            .next()
+            .ok_or_else(|| anyhow!("no IP address found for '{addr_str}'"))?,
+        _ => unreachable!(),
+    };
+
+    // Get number of bytes consumed by the address
+    let bytes_consumed = offset - start_offset;
+
+    Ok((socket_addr, bytes_consumed))
 }
 
 /// parse_ipv4_address parses an IPv4 address from a byte slice
