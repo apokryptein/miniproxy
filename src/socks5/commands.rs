@@ -1,11 +1,9 @@
+use crate::socks5::address::{parse_address_from_packet, parse_address_from_stream};
 use crate::socks5::protocol::{AddressType, Command, MAX_DGRAM, RSV, ReplyCode, Version};
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use std::{
-    io,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-};
+use std::{io, net::SocketAddr};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
     net::{TcpStream, UdpSocket},
@@ -57,13 +55,6 @@ pub struct UdpAssociate {
 impl UdpAssociate {
     /// UDP Associate run method
     pub async fn run(self, stream: &mut TcpStream) -> Result<()> {
-        // SOCKS5 UDP Request Header
-        // +----+------+------+----------+----------+----------+
-        // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
-        // +----+------+------+----------+----------+----------+
-        // | 2  |  1   |  1   | Variable |    2     | Variable |
-        // +----+------+------+----------+----------+----------+
-
         // Instantiate UDP relay buffer
         let mut buffer = [0u8; MAX_DGRAM];
 
@@ -114,9 +105,10 @@ impl UdpAssociate {
                 incoming_udp = self.server_socket.recv_from(&mut buffer) => {
                     match incoming_udp {
                         Ok((len, client_addr)) =>  {
-                            // TODO: write helper to parse incoming UDP and forward data
-                            let _ = len;
-                            let _ = client_addr;
+                            // Parse datagram and relay data
+                            if let Err(e) = self.handle_datagram(&mut outbound_sockets, &mut last_activity, &buffer[..len], client_addr).await {
+                                error!("[ERR] failed to handle client datagram: {e}");
+                            }
                         },
                         Err(e) => {
                             error!("[ERR] UDP receive error: {e}");
@@ -130,6 +122,36 @@ impl UdpAssociate {
 
             // TODO: Clean up expired connections
         }
+
+        Ok(())
+    }
+
+    /// handle_datagram handles parsing and forwarding of an incoming
+    /// UDP datagram from the SOCKS5 client
+    async fn handle_datagram(
+        &self,
+        outbound_sockets: &mut HashMap<SocketAddr, UdpSocket>,
+        last_activity: &mut HashMap<SocketAddr, Instant>,
+        packet: &[u8],
+        client_addr: SocketAddr,
+    ) -> Result<()> {
+        // SOCKS5 UDP Request Header
+        // +----+------+------+----------+----------+----------+
+        // |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+        // +----+------+------+----------+----------+----------+
+        // | 2  |  1   |  1   | Variable |    2     | Variable |
+        // +----+------+------+----------+----------+----------+
+
+        // Get address type directly -> skip RSV and FRAG
+        let atyp = packet[3];
+
+        // Set offset -> starts after ATYP
+        let mut offset = 4;
+
+        // Parse target address from packet
+        let (target_addr, addr_len) = parse_address_from_packet(&packet, offset, atyp).await?;
+
+        // TODO: finish from here
 
         Ok(())
     }
@@ -188,7 +210,7 @@ pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportPro
 /// parses the request, and returns an outbound stream to the target address
 async fn handle_connect_cmd(stream: &mut TcpStream) -> Result<TcpStream> {
     // Retrieve target from request
-    let (target, _) = parse_target_address(stream).await?;
+    let (target, _) = parse_address_from_stream(stream).await?;
 
     // Connect to target
     match TcpStream::connect(&target).await {
@@ -221,7 +243,7 @@ async fn handle_connect_cmd(stream: &mut TcpStream) -> Result<TcpStream> {
 /// returns the target address
 async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate> {
     // Retrieve target address from request
-    let target_addr = match parse_target_address(stream).await {
+    let target_addr = match parse_address_from_stream(stream).await {
         Ok((addr, AddressType::IPv4)) => addr.parse()?,
         Ok((addr, AddressType::IPv6)) => addr.parse()?,
         Ok((addr, AddressType::DomainName)) => tokio::net::lookup_host(&addr)
@@ -257,67 +279,6 @@ async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate>
 // =========
 // HELPERS
 // =========
-
-/// parse_target_address contains logic to parse the network address
-/// from an incoming client connection request: IPv4, IPv6, or domain name
-/// and returns the resultant address as a String
-async fn parse_target_address(stream: &mut TcpStream) -> Result<(String, AddressType)> {
-    // Read address type byte from stream
-    let mut atype = [0u8; 1];
-    stream.read_exact(&mut atype).await?;
-
-    let addr_type =
-        AddressType::from_byte(atype[0]).ok_or_else(|| anyhow!("[ERR] unknown address type"))?;
-
-    // Match type and extract address or domain name
-    let dest_addr = match AddressType::from_byte(atype[0]) {
-        Some(AddressType::IPv4) => {
-            let mut addr = [0u8; 4];
-            stream.read_exact(&mut addr).await?;
-            let ip = Ipv4Addr::from(addr);
-
-            //Read port
-            let mut port_buf = [0u8; 2];
-            stream.read_exact(&mut port_buf).await?;
-            let dest_port = u16::from_be_bytes(port_buf);
-
-            format!("{ip}:{dest_port}")
-        }
-        Some(AddressType::DomainName) => {
-            // First octet in DomainName contains the number of
-            // octets to follow
-            let mut len = [0u8; 1];
-            stream.read_exact(&mut len).await?;
-
-            // Read domain and convert to string
-            let mut domain = vec![0u8; len[0] as usize];
-            stream.read_exact(&mut domain).await?;
-            let domain_str = String::from_utf8(domain)?;
-
-            //Read port
-            let mut port_buf = [0u8; 2];
-            stream.read_exact(&mut port_buf).await?;
-            let dest_port = u16::from_be_bytes(port_buf);
-
-            format!("{domain_str}:{dest_port}")
-        }
-        Some(AddressType::IPv6) => {
-            let mut addr = [0u8; 16];
-            stream.read_exact(&mut addr).await?;
-            let ip = Ipv6Addr::from(addr);
-
-            //Read port
-            let mut port_buf = [0u8; 2];
-            stream.read_exact(&mut port_buf).await?;
-            let dest_port = u16::from_be_bytes(port_buf);
-
-            format!("{ip}:{dest_port}")
-        }
-        _ => return Err(anyhow!("[ERR] unsupported or unknown address type")),
-    };
-
-    Ok((dest_addr, addr_type))
-}
 
 /// send_reply handles logic for sending replies from the SOCKS server to
 /// the client
