@@ -153,7 +153,7 @@ impl UdpAssociate {
         let mut offset = 4;
 
         // Parse target address from packet
-        let (target_addr, addr_len) = parse_address_from_packet(&packet, offset, atyp).await?;
+        let (target_addr, addr_len) = parse_address_from_packet(packet, offset, atyp).await?;
 
         // Update offset to push past dest addr and port
         offset += addr_len;
