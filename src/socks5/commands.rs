@@ -42,6 +42,11 @@ impl Connect {
     }
 }
 
+// TODO: client address tracking needs a fix and isn't being tracked correctly.
+// As a result, the server doesn't know where to send the response.
+// Create a UdpRelayState struct containing outbound_sockets, target_to_client mappings in a
+// HashMap<SocketAddr, Sock
+
 /// UdpAssociate holds data relevant to the UDP Associate command
 /// such as SOCKS server socket and address as well as the target address
 pub struct UdpAssociate {
@@ -117,8 +122,18 @@ impl UdpAssociate {
                     }
                 }
 
-                // TODO: Handle incoming from outbound
+                // Target -> Server -> Client
+                response = self.handle_response(&mut outbound_sockets) => {
+                    if let Some((data, target_addr, client_response_addr)) = response {
+                        // Update last_activity entry for socket
+                        last_activity.insert(target_addr, Instant::now());
 
+                        // Send response to client
+                        if let Err(e) = self.send_response(&data, target_addr, client_response_addr).await {
+                            error!("Error sending response to client: {e}");
+                        }
+                    }
+                }
 
                 // Clean up expired connections
                 _ = tokio::time::sleep(Duration::from_secs(30)) => {
@@ -195,6 +210,62 @@ impl UdpAssociate {
             data.len()
         );
 
+        Ok(())
+    }
+
+    /// handle_response polls sockets from outbound for incoming data
+    async fn handle_response(
+        &self,
+        outbound_sockets: &mut HashMap<SocketAddr, UdpSocket>,
+    ) -> Option<(Vec<u8>, SocketAddr, SocketAddr)> {
+        // Incoming datagram buffer
+        let mut buffer = [0u8; MAX_DGRAM];
+
+        // Iterate over sockets to check for incoming data
+        for (&target_addr, socket) in outbound_sockets.iter() {
+            match socket.try_recv_from(&mut buffer) {
+                Ok((len, _from_addr)) => {
+                    // If we get data, return it with associated taget address
+                    return Some((buffer[..len].to_vec(), target_addr, target_addr));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // No data -> continue checking other sockets
+                    continue;
+                }
+                Err(e) => {
+                    error!("error on outbound socket for {target_addr}: {e}");
+                    continue;
+                }
+            }
+        }
+
+        // Sleep
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        // If no data then, return None
+        None
+    }
+
+    /// send_response handles sending response data to the client after reception
+    /// from the target
+    async fn send_response(
+        &self,
+        data: &[u8],
+        target_addr: SocketAddr,
+        client_addr: SocketAddr,
+    ) -> Result<()> {
+        // Build response packet
+        let response = create_response_packet(data, target_addr)?;
+
+        // Send wrapped tata back to client
+        self.server_socket.send_to(&response, client_addr).await?;
+
+        // DEBUG
+        // TODO: ensure messaging follows a consistent format
+        info!(
+            "sent {} bytes from {target_addr} back to client {client_addr}",
+            data.len()
+        );
         Ok(())
     }
 }
@@ -385,4 +456,51 @@ fn clean_expired_connections(
             true
         }
     });
+}
+
+/// create_response_packet build a SOCKS5 response packet
+fn create_response_packet(data: &[u8], from_addr: SocketAddr) -> Result<Vec<u8>> {
+    //  +----+------+------+----------+----------+----------+
+    //  |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+    //  +----+------+------+----------+----------+----------+
+    //  | 2  |  1   |  1   | Variable |    2     | Variable |
+    //  +----+------+------+----------+----------+----------+
+
+    // Instantiate new vec for packet
+    let mut packet = Vec::new();
+
+    // RSV -> 2 bytes
+    packet.extend_from_slice(&[0x00, 0x00]);
+
+    // FRAG -> single byte
+    packet.push(0x00);
+
+    // Add address data bytes on type
+    match from_addr {
+        SocketAddr::V4(v4_addr) => {
+            // ATYP -> 1 byte
+            packet.push(AddressType::IPv4 as u8);
+
+            // Address -> 4 bytes
+            packet.extend_from_slice(&v4_addr.ip().octets());
+
+            // Port in BE -> 2 bytes
+            packet.extend_from_slice(&v4_addr.port().to_be_bytes());
+        }
+        SocketAddr::V6(v6_addr) => {
+            // ATYP -> 1 byte
+            packet.push(AddressType::IPv6 as u8);
+
+            // Address -> 16 bytes
+            packet.extend_from_slice(&v6_addr.ip().octets());
+
+            // Port in BE -> 2 bytes
+            packet.extend_from_slice(&v6_addr.port().to_be_bytes());
+        }
+    }
+
+    // Push data onto packet
+    packet.extend_from_slice(data);
+
+    Ok(packet)
 }
