@@ -9,8 +9,6 @@ use tracing::{error, info};
 
 use crate::socks5::{auth::UserPass, server::Socks5Server};
 
-// TODO: add lib.rs
-
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A lightweight TCP and SOCKS5 proxy", long_about = None)]
 struct Args {
