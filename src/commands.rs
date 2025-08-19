@@ -1,5 +1,5 @@
-use crate::socks5::address::{parse_address_from_packet, parse_address_from_stream};
-use crate::socks5::protocol::{AddressType, Command, MAX_DGRAM, RSV, ReplyCode, Version};
+use crate::address::{parse_address_from_packet, parse_address_from_stream};
+use crate::protocol::{AddressType, Command, MAX_DGRAM, RSV, ReplyCode, Version};
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use tracing::{debug, error, info};
 
 /// TransportProcol is an enum holding either a tokio
 /// TcpStream or UdpSocket
-pub enum TransportProcol {
+pub enum TransportProtocol {
     Tcp(TcpStream),
     UdpAssociate(UdpAssociate),
 }
@@ -366,7 +366,7 @@ async fn monitor_outbound_socket(
 
 /// handle_socks_request checks the incoming request for SOCKS5 version number
 /// and command and routes the stream to the appropriate command handler
-pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportProcol> {
+pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportProtocol> {
     // SOCKS5 request format
     // +----+-----+-------+------+----------+----------+
     // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
@@ -392,7 +392,7 @@ pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportPro
     match Command::from_byte(command) {
         Some(Command::Connect) => {
             let outbound = handle_connect_cmd(stream).await?;
-            Ok(TransportProcol::Tcp(outbound))
+            Ok(TransportProtocol::Tcp(outbound))
         }
         Some(Command::Bind) => {
             send_reply(stream, ReplyCode::CommandNotSupported, "0.0.0.0:0".parse()?).await?;
@@ -400,7 +400,7 @@ pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportPro
         }
         Some(Command::UdpAssociate) => {
             let udp_association = handle_udpassociate_cmd(stream).await?;
-            Ok(TransportProcol::UdpAssociate(udp_association))
+            Ok(TransportProtocol::UdpAssociate(udp_association))
         }
         _ => {
             send_reply(stream, ReplyCode::ServerFailure, "0.0.0.0:0".parse()?).await?;
