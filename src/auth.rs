@@ -5,6 +5,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
+use tracing::debug;
 
 /// UserPass holds username/password credentials as dictated
 /// server-side
@@ -36,7 +37,7 @@ pub async fn negotiate_auth(
 
     // Ensure version is 0x05 -> SOCKS5
     if version != Version::SOCKS5 as u8 {
-        bail!("[ERR] not SOCKS5");
+        bail!("not SOCKS5");
     }
 
     // Read auth methods: currently only implementing no-auth
@@ -44,21 +45,31 @@ pub async fn negotiate_auth(
     stream.read_exact(&mut methods).await?;
 
     // Retrieve desired method
-    let method = select_auth_method(&methods);
+    let method = select_auth_method(&methods, auth_config.is_some());
 
     // Write response to client with selected method
     stream.write_all(&[Version::SOCKS5 as u8, method]).await?;
+
+    // If no accpetable methods, close connection
+    if method == AuthMethod::NoAcceptable as u8 {
+        bail!("no acceptable authentication methods");
+    }
 
     // Route to appropriate auth handler
     match AuthMethod::from_byte(method) {
         AuthMethod::UserPass => {
             let creds = auth_config
                 .as_ref()
-                .ok_or_else(|| anyhow!("[ERR] username/password required but not configured"))?;
+                .ok_or_else(|| anyhow!("username/password required but not configured"))?;
             authenticate_userpass(stream, creds).await?
         }
-        AuthMethod::NoAuth => (),
-        _ => (),
+        AuthMethod::NoAuth => {
+            // Only allow NoAuth if auth isn't configured
+            if auth_config.is_some() {
+                bail!("authentication required but client didn't provide credentials");
+            }
+        }
+        _ => bail!("unsupported authentication method"),
     }
 
     Ok(())
@@ -73,13 +84,13 @@ async fn authenticate_userpass(stream: &mut TcpStream, server_creds: &UserPass) 
     // | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
     // +----+------+----------+------+----------+
 
-    // Get sugnegotiation -> 0x01 expected
+    // Get subnegotiation -> 0x01 expected
     let mut ver = [0u8; 1];
     stream.read_exact(&mut ver).await?;
 
     // Check version number
     if ver[0] != 0x01 {
-        bail!("[ERR] invalid username/password sugnegotiation number");
+        bail!("invalid username/password sugnegotiation number");
     }
 
     // Instantiate buffer & read username length
@@ -121,25 +132,27 @@ async fn authenticate_userpass(stream: &mut TcpStream, server_creds: &UserPass) 
 
     // Validate authentication status
     match status {
-        AuthStatus::Success => Ok(()),
-        AuthStatus::Failure => bail!("[ERR] authentication failed"),
+        AuthStatus::Success => {
+            debug!("authentication successful");
+            Ok(())
+        }
+        AuthStatus::Failure => bail!("authentication failed"),
     }
 }
 
 /// select_auth_method take a reference to a u8 byte array that contains
 /// auth methods from the socks client. It then returns the desired
 /// auth method's byte value
-fn select_auth_method(client_methods: &[u8]) -> u8 {
-    // Preferred auth method order
-    const PREFERRED_METHODS: &[AuthMethod] = &[AuthMethod::UserPass, AuthMethod::NoAuth];
+fn select_auth_method(client_methods: &[u8], auth_required: bool) -> u8 {
+    // Get necessary booleans for comparison
+    let has_noauth = client_methods.contains(&(AuthMethod::NoAuth as u8));
+    let has_userpass = client_methods.contains(&(AuthMethod::UserPass as u8));
 
-    // Iterate through preferences in order. If there's a match
-    // return it
-    for &preferred in PREFERRED_METHODS {
-        if client_methods.contains(&(preferred as u8)) {
-            return preferred as u8;
-        }
+    // Determine auth based on requirements and support
+    match (auth_required, has_noauth, has_userpass) {
+        (true, _, true) => AuthMethod::UserPass as u8, // Auth required, supported by client
+        (false, true, _) => AuthMethod::NoAuth as u8,  // No auth required, supported by client
+        (false, false, true) => AuthMethod::UserPass as u8, // No auth required, client only has userpass
+        _ => AuthMethod::NoAcceptable as u8,                // No compatible methods
     }
-
-    AuthMethod::NoAcceptable as u8
 }
