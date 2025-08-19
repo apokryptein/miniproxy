@@ -1,4 +1,4 @@
-use crate::socks5::protocol::{AuthMethod, AuthStatus, Version};
+use crate::protocol::{AuthMethod, AuthStatus, Version};
 use anyhow::{Result, anyhow, bail};
 use std::sync::Arc;
 use tokio::{

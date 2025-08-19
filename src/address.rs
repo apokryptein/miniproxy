@@ -1,4 +1,4 @@
-use crate::socks5::protocol::AddressType;
+use crate::protocol::AddressType;
 use anyhow::{Result, anyhow};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::{io::AsyncReadExt, net::TcpStream};

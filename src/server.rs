@@ -1,6 +1,6 @@
-use crate::socks5::{
+use crate::{
     auth::{self, UserPass},
-    commands::{self, TransportProcol},
+    commands::{self, TransportProtocol},
 };
 use anyhow::{Result, anyhow};
 use std::sync::Arc;
@@ -71,7 +71,7 @@ async fn handle_connection(
 
     // Handle connection request from client
     match commands::handle_socks_request(&mut stream).await {
-        Ok(TransportProcol::Tcp(tcp_outbound)) => {
+        Ok(TransportProtocol::Tcp(tcp_outbound)) => {
             // Instantiate Connect
             let connect = commands::Connect {
                 inbound: stream,
@@ -81,7 +81,7 @@ async fn handle_connection(
             // Run it
             connect.run().await?;
         }
-        Ok(TransportProcol::UdpAssociate(udp_association)) => {
+        Ok(TransportProtocol::UdpAssociate(udp_association)) => {
             // Relay UDP traffic
             udp_association.run(&mut stream).await?;
         }
