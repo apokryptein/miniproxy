@@ -103,21 +103,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## SOCKS5 Implementation State
+## SOCKS5 Implementation Status
 
 ### Implemented
 
-| Feature                  | Status       | State    |
-| ------------------------ | ------------ | -------- |
-| CONNECT                  | Full support | RFC 1928 |
-| UDP ASSOCIATE            | Full Support | RFC 1928 |
-| No Authentication        | Full Support | RFC 1928 |
-| Username/Password        | Full Support | RFC 1929 |
-| IPv4, IPv6, Domain Names | Full Support | RFC 1929 |
-
-### Not Implemented
-
-| Feature               | Status        | Notes                               |
-| --------------------- | ------------- | ----------------------------------- |
-| BIND                  | Not supported | Rarely used - unlikely to implement |
-| GSSAPI Authentication | Not supported | Future feature                      |
+| Feature                  | Status        | Notes                               |
+| ------------------------ | ------------- | ----------------------------------- |
+| CONNECT                  | Full support  | RFC 1928                            |
+| UDP ASSOCIATE            | Full Support  | RFC 1928                            |
+| No Authentication        | Full Support  | RFC 1928                            |
+| Username/Password        | Full Support  | RFC 1929                            |
+| IPv4, IPv6, Domain Names | Full Support  | RFC 1928                            |
+| BIND                     | Not supported | Rarely used - unlikely to implement |
+| GSSAPI Authentication    | Not supported | Future feature                      |

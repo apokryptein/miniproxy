@@ -55,8 +55,7 @@ struct UdpAssociationKey {
 struct UdpRelayState {
     /// Maps (client_addr, target_addr) -> outbound socket
     outbound_sockets: HashMap<UdpAssociationKey, Arc<UdpSocket>>,
-    /// Maps outbound socket local addr -> (client_addr, target_addr) for response routing
-    socket_to_association: HashMap<SocketAddr, UdpAssociationKey>,
+
     /// Track last activity for cleanup
     last_activity: HashMap<UdpAssociationKey, Instant>,
 }
@@ -67,7 +66,6 @@ impl UdpRelayState {
     fn new() -> Self {
         Self {
             outbound_sockets: HashMap::new(),
-            socket_to_association: HashMap::new(),
             last_activity: HashMap::new(),
         }
     }
@@ -281,7 +279,6 @@ async fn handle_client_datagram(
                 state
                     .outbound_sockets
                     .insert(key.clone(), Arc::clone(&new_socket));
-                state.socket_to_association.insert(socket_addr, key.clone());
 
                 // Spawn task to monitor socket for response
                 let response_tx = response_tx.clone();
@@ -542,11 +539,7 @@ async fn cleanup_expired_connections(relay_state: Arc<RwLock<UdpRelayState>>, ti
 
     // Remove expired connections
     for key in to_remove {
-        if let Some(socket) = state.outbound_sockets.remove(&key)
-            && let Ok(addr) = socket.local_addr()
-        {
-            state.socket_to_association.remove(&addr);
-        }
+        state.outbound_sockets.remove(&key);
         state.last_activity.remove(&key);
 
         info!(
