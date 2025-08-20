@@ -360,6 +360,29 @@ async fn monitor_outbound_socket(
     debug!("Stopped monitoring socket for {client_addr} -> {target_addr}");
 }
 
+/// Send a response packet back to the client
+async fn send_response_to_client(
+    server_socket: &UdpSocket,
+    data: &[u8],
+    target_addr: SocketAddr,
+    client_addr: SocketAddr,
+) -> Result<()> {
+    // Build SOCKS5 UDP response packet
+    let response = create_response_packet(data, target_addr)?;
+
+    // Send to client
+    server_socket.send_to(&response, client_addr).await?;
+
+    debug!(
+        "Sent {} bytes from {} to client {}",
+        data.len(),
+        target_addr,
+        client_addr
+    );
+
+    Ok(())
+}
+
 /// handle_socks_request checks the incoming request for SOCKS5 version number
 /// and command and routes the stream to the appropriate command handler
 pub async fn handle_socks_request(stream: &mut TcpStream) -> Result<TransportProtocol> {
@@ -586,29 +609,6 @@ fn create_response_packet(data: &[u8], from_addr: SocketAddr) -> Result<Vec<u8>>
     packet.extend_from_slice(data);
 
     Ok(packet)
-}
-
-/// Send a response packet back to the client
-async fn send_response_to_client(
-    server_socket: &UdpSocket,
-    data: &[u8],
-    target_addr: SocketAddr,
-    client_addr: SocketAddr,
-) -> Result<()> {
-    // Build SOCKS5 UDP response packet
-    let response = create_response_packet(data, target_addr)?;
-
-    // Send to client
-    server_socket.send_to(&response, client_addr).await?;
-
-    debug!(
-        "Sent {} bytes from {} to client {}",
-        data.len(),
-        target_addr,
-        client_addr
-    );
-
-    Ok(())
 }
 
 // Checks if the client is permitted to send UDP data to the alotted socket
