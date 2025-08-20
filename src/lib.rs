@@ -1,5 +1,19 @@
 //! A lightweight SOCKS5 proxy library
 //!
+//! ## SOCKS5 Implementation
+//!
+//! - Features:
+//!     - CONNECT
+//!     - UDP ASSOCIATE
+//!     - No Authentication
+//!     - Username/Passowrd Authentication
+//!     - Async using tokio and channel-based communication
+//!     - Stateful tracking of client-target associations
+//!     - Dedicated socket per client-target pair -> minimizes NAT and client identification issues
+//!     - Time-out based socket cleanup
+//! - [SOCKS5 (RFC 1928)](https://datatracker.ietf.org/doc/html/rfc1928)
+//! - [Username/Password Authentication (RFC 1929)](https://datatracker.ietf.org/doc/html/rfc1929)
+//!
 //! # Example
 //! ```no_run
 //! use miniproxy::{Socks5Server, auth::UserPass};
