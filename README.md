@@ -1,58 +1,123 @@
 # miniproxy
 
-A lighweight, fast TCP and SOCKS5 proxy written built for learning and practical use.
+A lightweight, fast SOCKS5 proxy library and server.
 
 ## Features
 
-- Dual mode: TCP port forwarding and SOCKS5 proxy
-- SOCKS5 support: full CONNECT implementation (RFC 1928)
-- DNS privacy: domain resolution happens proxy-side
-- Async: built on Tokio for high performance
-- Simple: no dependencies on external proxy libraries
+- SOCKS5 (RFC 1928) Implementation:
+  - CONNECT command for TCP proxying
+  - UDP ASSOCIATE for UDP relay
+  - Username/Password authentication
+  - No authentication
+  - IPv4, IPv6, and domain name support
+- Domain resolution happens proxy-side
+- Built on Tokio for async I/O
+- No dependencies on external proxy libraries
+- Use as a library or standalone binary
 
 ## Installation
 
+### Library
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+miniproxy = { git = "https://github.com/apokryptein/miniproxy" }
+```
+
+### Binary
+
+Install the latest version from GitHub:
+
 ```sh
-# Clone the repo
+cargo install --git https://github.com/apokryptein/miniproxy
+```
+
+Or clone and build locally:
+
+```sh
 git clone https://github.com/apokryptein/miniproxy
 cd miniproxy
-
-# Build and install
 cargo install --path <path>
 ```
 
 ## Usage
 
-### TCP Proxy
+### Command Line
+
+#### Basic proxy server (no authentication)
 
 ```sh
-miniproxy --listen 127.0.0.1:1080 --target example.com
-
-miniproxy -l 127.0.0.1:1080 -t example.com
+miniproxy --listen 127.0.0.1:1080
+# or
+miniproxy -l 127.0.0.1:1080
 ```
 
-### SOCKS5 Proxy
+#### Username/password authentication
 
 ```sh
-miniproxy --listen 127.0.0.1:1080 --socks5
-
-miniproxy -l 127.0.0.1:1080 -s
+miniproxy -l 127.0.0.1:1080 --username <user> --password <pass>
+# or
+miniproxy -l 127.0.0.1:1080 -u <user> -p <pass>
 ```
 
-## SOCKS5 Implementation
+#### Enable verbose logging
 
-### Supported Features
+```sh
+miniproxy -l 127.0.0.1:1080 -v
+```
 
-- CONNECT command
-- IPv4 addresses
-- IPv6 addresses
-- Domain names
-- Authentication
-  - No auth
-  - Username/password
+### Library Usage
 
-### Not Implemented (Future Improvements)
+#### Basic Server
 
-- BIND command
-- UDP ASSOCIATE
-- GSSAPI Authentication
+```rust
+use miniproxy::Socks5Server;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let server = Socks5Server::new("127.0.0.1:1080");
+  server.run().await?;
+  Ok(())
+}
+```
+
+#### With Authentication
+
+```rust
+use miniproxy::{Socks5Server, auth::UserPass};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let auth = UserPass {
+    username: "<user>".to_string(),
+    password: "<pass>".to_string(),
+  };
+
+  let server = Socks5Server::new("127.0.0.1:1080")
+    .with_auth(Some(auth));
+
+  server.run().await?;
+  Ok(())
+}
+```
+
+## SOCKS5 Implementation State
+
+### Implemented
+
+| Feature                  | Status       | State    |
+| ------------------------ | ------------ | -------- |
+| CONNECT                  | Full support | RFC 1928 |
+| UDP ASSOCIATE            | Full Support | RFC 1928 |
+| No Authentication        | Full Support | RFC 1928 |
+| Username/Password        | Full Support | RFC 1929 |
+| IPv4, IPv6, Domain Names | Full Support | RFC 1929 |
+
+### Not Implemented
+
+| Feature               | Status        | Notes                               |
+| --------------------- | ------------- | ----------------------------------- |
+| BIND                  | Not supported | Rarely used - unlikely to implement |
+| GSSAPI Authentication | Not supported | Future feature                      |
