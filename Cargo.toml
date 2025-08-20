@@ -1,8 +1,11 @@
 [package]
 name = "miniproxy"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+license = "MIT"
 description = "A lightweight SOCKS5 proxy"
+repository = "https://github.com/apokryptein/miniproxy"
+keywords = ["proxy", "socks", "socks5", "async", "io"]
 
 [lib]
 name = "miniproxy"
