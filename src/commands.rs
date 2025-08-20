@@ -77,7 +77,6 @@ pub struct UdpAssociate {
     pub server_socket: UdpSocket,
     pub server_addr: SocketAddr,
     pub peer_addr: SocketAddr,
-    pub target_addr: SocketAddr,
 }
 
 /// UdpAssociate implementation block
@@ -446,16 +445,10 @@ async fn handle_connect_cmd(stream: &mut TcpStream) -> Result<TcpStream> {
 /// handle_udpassociate_cmd parses the incoming UDP ASSOCIATE command, retrieves, and
 /// returns the target address
 async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate> {
-    // Retrieve target address from request
-    let target_addr = match parse_address_from_stream(stream).await {
-        Ok((addr, AddressType::IPv4)) => addr.parse()?,
-        Ok((addr, AddressType::IPv6)) => addr.parse()?,
-        Ok((addr, AddressType::DomainName)) => tokio::net::lookup_host(&addr)
-            .await?
-            .next()
-            .ok_or_else(|| anyhow!("[ERR] failed to resolve host: {}", addr))?,
-        Err(e) => return Err(anyhow!("[ERR] failed to parse target address: {e}")),
-    };
+    // Parse but ignore client's expected address in UDP Associate
+    // Typically this is 0.0.0.0:0. Clients must include dst addr + port in UDP datagrams
+    // which is parsed in handle_client_datagram
+    let (_client_expected_addr, _) = parse_address_from_stream(stream).await?;
 
     // Bind UDP socket on SOCKS server
     match UdpSocket::bind("0.0.0.0:0").await {
@@ -468,7 +461,6 @@ async fn handle_udpassociate_cmd(stream: &mut TcpStream) -> Result<UdpAssociate>
                 server_socket: sock,
                 server_addr: udp_socket_addr,
                 peer_addr: stream.peer_addr()?,
-                target_addr,
             };
             Ok(udp_association)
         }
