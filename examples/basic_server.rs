@@ -1,6 +1,6 @@
 //! Basic SOCKS5 server example
 
-use miniproxy::Socks5Server;
+use soxide::Socks5Server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

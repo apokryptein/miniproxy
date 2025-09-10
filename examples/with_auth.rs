@@ -1,6 +1,6 @@
 //! SOCKS5 server with username/password authentication example
 
-use miniproxy::{Socks5Server, auth::UserPass};
+use soxide::{Socks5Server, auth::UserPass};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

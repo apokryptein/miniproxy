@@ -1,4 +1,4 @@
-# miniproxy
+# soxide
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -25,7 +25,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-miniproxy = { git = "https://github.com/apokryptein/miniproxy" }
+soxide = { git = "https://github.com/apokryptein/soxide" }
 ```
 
 ### Binary
@@ -33,14 +33,14 @@ miniproxy = { git = "https://github.com/apokryptein/miniproxy" }
 Install the latest version from GitHub:
 
 ```sh
-cargo install --git https://github.com/apokryptein/miniproxy
+cargo install --git https://github.com/apokryptein/soxide
 ```
 
 Or clone and build locally:
 
 ```sh
-git clone https://github.com/apokryptein/miniproxy
-cd miniproxy
+git clone https://github.com/apokryptein/soxide
+cd soxide
 cargo install --path <path>
 ```
 
@@ -51,23 +51,23 @@ cargo install --path <path>
 #### Basic proxy server (no authentication)
 
 ```sh
-miniproxy --listen 127.0.0.1:1080
+soxide --listen 127.0.0.1:1080
 # or
-miniproxy -l 127.0.0.1:1080
+soxide -l 127.0.0.1:1080
 ```
 
 #### Username/password authentication
 
 ```sh
-miniproxy -l 127.0.0.1:1080 --username <user> --password <pass>
+soxide -l 127.0.0.1:1080 --username <user> --password <pass>
 # or
-miniproxy -l 127.0.0.1:1080 -u <user> -p <pass>
+soxide -l 127.0.0.1:1080 -u <user> -p <pass>
 ```
 
 #### Enable verbose logging
 
 ```sh
-miniproxy -l 127.0.0.1:1080 -v
+soxide -l 127.0.0.1:1080 -v
 ```
 
 ### Library Usage
@@ -75,7 +75,7 @@ miniproxy -l 127.0.0.1:1080 -v
 #### Basic Server
 
 ```rust
-use miniproxy::Socks5Server;
+use soxide::Socks5Server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #### With Authentication
 
 ```rust
-use miniproxy::{Socks5Server, auth::UserPass};
+use soxide::{Socks5Server, auth::UserPass};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

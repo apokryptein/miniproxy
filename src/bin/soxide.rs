@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use clap::Parser;
-use miniproxy::{Socks5Server, auth::UserPass};
+use soxide::{Socks5Server, auth::UserPass};
 use tracing::info;
 
 #[derive(Parser, Debug)]
