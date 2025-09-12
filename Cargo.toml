@@ -4,7 +4,9 @@ version = "0.2.0"
 edition = "2024"
 license = "MIT"
 description = "A lightweight SOCKS5 proxy"
+homepage = "https://github.com/apokryptein/soxide"
 repository = "https://github.com/apokryptein/soxide"
+readme = "README.md"
 keywords = ["proxy", "socks", "socks5", "async", "io"]
 
 [lib]
