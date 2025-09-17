@@ -110,7 +110,7 @@ pub enum ReplyCode {
     NetworkUnreachable = 0x03,
     HostUnreachable = 0x04,
     ConnectionRefused = 0x05,
-    //TtlExpired = 0x06, // TODO: implement optional TTL on connection
+    //TtlExpired = 0x06,
     CommandNotSupported = 0x07,
     //AddrTypeUnsupported = 0x08,
     // 0x09 - 0xFF: unassigned
