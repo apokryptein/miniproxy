@@ -3,7 +3,7 @@ use crate::{
     commands::{self, TransportProtocol},
 };
 use anyhow::{Result, anyhow};
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info};
 
@@ -12,6 +12,7 @@ use tracing::{error, info};
 pub struct Socks5Server {
     pub listen_addr: String,
     pub auth_config: Option<Arc<UserPass>>,
+    listener: Option<TcpListener>,
 }
 
 /// Socks5Server implementation block
@@ -21,6 +22,7 @@ impl Socks5Server {
         Self {
             listen_addr: listen_addr.into(),
             auth_config: None,
+            listener: None,
         }
     }
 
@@ -31,13 +33,29 @@ impl Socks5Server {
         self
     }
 
-    /// run handles server spinup and listens for incoming connections
-    pub async fn run(&self) -> Result<()> {
-        // DEBUG
-        info!("SOCKS5 proxy listening on {}", &self.listen_addr);
+    /// bind to the listen address, panics when called twice
+    pub async fn bind(&mut self) -> Result<SocketAddr> {
+        if self.listener.is_some() {
+            panic!("bind can only be called once");
+        }
 
         // Instantiate tokio listener
         let listener = TcpListener::bind(&self.listen_addr).await?;
+        let addr = listener.local_addr()?;
+
+        // DEBUG
+        info!("SOCKS5 proxy listening on {:?}", addr);
+
+        self.listener = Some(listener);
+        Ok(addr)
+    }
+
+    /// run handles server spinup and listens for incoming connections
+    pub async fn run(&mut self) -> Result<()> {
+        if self.listener.is_none() {
+            self.bind().await?;
+        }
+        let listener = self.listener.take().unwrap();
 
         // Listen for connections to proxy
         loop {
